@@ -1,0 +1,19 @@
+{
+  "name": "@tracker-platform/tracking-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tracker-platform/database": "workspace:*",
+    "@prisma/client": "^6.14.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.2"
+  }
+}
