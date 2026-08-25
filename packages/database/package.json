@@ -1,0 +1,8 @@
+{
+  "name": "@tracker-platform/database",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { "./client": "./src/client.ts" },
+  "dependencies": { "@prisma/client": "^6.14.0" }
+}
