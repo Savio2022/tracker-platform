@@ -1,43 +1,99 @@
 import http from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { db } from '@tracker-platform/database/client';
 
 const port = Number(process.env.PORT || 4000);
+const maxBodyBytes = 128 * 1024;
 
 function json(res: http.ServerResponse, status: number, body: unknown) {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*' });
   res.end(JSON.stringify(body));
 }
 
 async function readBody(req: http.IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(Buffer.from(chunk));
+  let size = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.from(chunk);
+    size += buffer.length;
+    if (size > maxBodyBytes) throw new Error('body_too_large');
+    chunks.push(buffer);
+  }
   return Buffer.concat(chunks).toString('utf8');
 }
 
 const server = http.createServer(async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'access-control-allow-origin': '*',
+      'access-control-allow-methods': 'POST,GET,OPTIONS',
+      'access-control-allow-headers': 'content-type'
+    });
+    return res.end();
+  }
+
   if (req.method === 'GET' && req.url === '/health') {
     return json(res, 200, { ok: true, service: 'tracking-api' });
   }
 
   if (req.method === 'POST' && req.url === '/v1/events') {
     try {
-      const raw = await readBody(req);
-      const event = JSON.parse(raw);
-      if (!event.projectKey || !event.name || !event.eventId) {
+      const event = JSON.parse(await readBody(req));
+      const context = event.context;
+      if (!event.projectKey || !event.name || !event.eventId || !context?.visitorId || !context?.sessionId) {
         return json(res, 400, { error: 'invalid_event' });
       }
 
-      // TODO: persist event with Prisma after database bootstrap.
-      console.log(JSON.stringify({ receivedAt: new Date().toISOString(), event }));
-      return json(res, 202, { accepted: true, eventId: event.eventId || randomUUID() });
-    } catch {
-      return json(res, 400, { error: 'invalid_json' });
+      const project = await db.project.findUnique({ where: { publicKey: event.projectKey } });
+      if (!project || !project.active) return json(res, 401, { error: 'invalid_project' });
+
+      const visitor = await db.visitor.upsert({
+        where: { id: context.visitorId },
+        create: { id: context.visitorId, projectId: project.id },
+        update: { lastSeen: new Date() }
+      });
+
+      await db.session.upsert({
+        where: { id: context.sessionId },
+        create: {
+          id: context.sessionId,
+          projectId: project.id,
+          visitorId: visitor.id,
+          landingUrl: context.pageUrl,
+          referrer: context.referrer,
+          utmSource: context.utmSource,
+          utmMedium: context.utmMedium,
+          utmCampaign: context.utmCampaign,
+          utmContent: context.utmContent,
+          utmTerm: context.utmTerm,
+          gclid: context.gclid,
+          fbclid: context.fbclid
+        },
+        update: { endedAt: null }
+      });
+
+      await db.event.create({
+        data: {
+          id: event.eventId,
+          projectId: project.id,
+          visitorId: visitor.id,
+          sessionId: context.sessionId,
+          name: event.name,
+          occurredAt: new Date(event.occurredAt || Date.now()),
+          pageUrl: context.pageUrl,
+          referrer: context.referrer,
+          properties: event.properties || undefined
+        }
+      });
+
+      return json(res, 202, { accepted: true, eventId: event.eventId });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'body_too_large') return json(res, 413, { error: 'body_too_large' });
+      console.error(error);
+      return json(res, 400, { error: 'invalid_event' });
     }
   }
 
   return json(res, 404, { error: 'not_found' });
 });
 
-server.listen(port, () => {
-  console.log(`tracking-api listening on :${port}`);
-});
+server.listen(port, () => console.log(`tracking-api listening on :${port}`));
