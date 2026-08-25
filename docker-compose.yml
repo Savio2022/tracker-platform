@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tracker
+      POSTGRES_USER: tracker
+      POSTGRES_PASSWORD: tracker_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - tracker_postgres:/var/lib/postgresql/data
+
+volumes:
+  tracker_postgres:
