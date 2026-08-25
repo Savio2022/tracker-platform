@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  publicKey String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  visitors  Visitor[]
+  sessions  Session[]
+  events    Event[]
+  orders    Order[]
+}
+
+model Visitor {
+  id        String   @id @default(cuid())
+  projectId String
+  externalId String?
+  firstSeen DateTime @default(now())
+  lastSeen  DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sessions  Session[]
+  events    Event[]
+  orders    Order[]
+  @@index([projectId])
+  @@index([projectId, externalId])
+}
+
+model Session {
+  id        String   @id
+  projectId String
+  visitorId String
+  startedAt DateTime @default(now())
+  endedAt   DateTime?
+  landingUrl String?
+  referrer  String?
+  utmSource String?
+  utmMedium String?
+  utmCampaign String?
+  utmContent String?
+  utmTerm String?
+  gclid String?
+  fbclid String?
+  userAgent String?
+  deviceType String?
+  country String?
+  region String?
+  city String?
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  visitor Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  events Event[]
+  orders Order[]
+  @@index([projectId, startedAt])
+  @@index([visitorId, startedAt])
+}
+
+model Event {
+  id String @id
+  projectId String
+  visitorId String?
+  sessionId String?
+  name String
+  occurredAt DateTime @default(now())
+  pageUrl String?
+  referrer String?
+  properties Json?
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  visitor Visitor? @relation(fields: [visitorId], references: [id], onDelete: SetNull)
+  session Session? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  @@index([projectId, name, occurredAt])
+  @@index([sessionId, occurredAt])
+}
+
+model Order {
+  id String @id
+  projectId String
+  visitorId String?
+  sessionId String?
+  externalId String?
+  status String
+  currency String @default("BRL")
+  amount Decimal @db.Decimal(14,2)
+  occurredAt DateTime @default(now())
+  source String?
+  metadata Json?
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  visitor Visitor? @relation(fields: [visitorId], references: [id], onDelete: SetNull)
+  session Session? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  @@unique([projectId, externalId])
+  @@index([projectId, occurredAt])
+  @@index([projectId, status])
+}
